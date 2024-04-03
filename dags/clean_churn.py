@@ -1,4 +1,3 @@
-# dags/churn.py
 import pendulum
 from airflow.decorators import dag, task
 from steps.messages import send_telegram_success_message, send_telegram_failure_message
@@ -7,14 +6,14 @@ from steps.messages import send_telegram_success_message, send_telegram_failure_
     schedule='@once',
     start_date=pendulum.datetime(2023, 1, 1, tz="UTC"),
     catchup=False,
-    dag_id='churn',
-    tags=["churn"],
+    dag_id='clean_churn',
+    tags=["clear_churn"],
     on_success_callback=send_telegram_success_message,
     on_failure_callback=send_telegram_failure_message
     )
 
 
-def prepare_churn_dataset():
+def clean_churn_dataset():
     import pandas as pd
     import numpy as np
     from airflow.providers.postgres.hooks.postgres import PostgresHook    
@@ -24,7 +23,7 @@ def prepare_churn_dataset():
         hook = PostgresHook('destination_db')
         conn = hook.get_sqlalchemy_engine()
         metadata = MetaData()
-        users_churn = Table('users_churn', metadata,
+        clean_users_churn = Table('clean_users_churn', metadata,
                             Column('id', Integer, primary_key=True, autoincrement=True),
                             Column('customer_id', String), Column('begin_date', DateTime),
                             Column('end_date', DateTime), Column('type', String),
@@ -37,9 +36,9 @@ def prepare_churn_dataset():
                             Column('senior_citizen', Integer), Column('partner', String),
                             Column('dependents', String), Column('multiple_lines', String),
                             Column('target', Integer),
-                            UniqueConstraint('customer_id', name='unique_constraint')
+                            UniqueConstraint('customer_id', name='clean_constraint')
                            ) 
-        if not inspect(conn).has_table(users_churn.name): 
+        if not inspect(conn).has_table(clean_users_churn.name): 
             metadata.create_all(conn) 
 	
     @task()
@@ -71,7 +70,7 @@ def prepare_churn_dataset():
     def load(data: pd.DataFrame):
         hook = PostgresHook('destination_db')
         hook.insert_rows(
-            table="users_churn",
+            table="clean_users_churn",
             replace=True,
             target_fields=data.columns.tolist(),
             replace_index=['customer_id'],
@@ -82,4 +81,4 @@ def prepare_churn_dataset():
     data = extract()
     transformed_data = transform(data)
     load(transformed_data)
-prepare_churn_dataset()
+clean_churn_dataset()
