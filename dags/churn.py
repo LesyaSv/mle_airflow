@@ -1,49 +1,57 @@
-# dags/churn.py
 import pendulum
 from airflow.decorators import dag, task
-from steps.messages import send_telegram_success_message, send_telegram_failure_message
+
 
 @dag(
     schedule='@once',
     start_date=pendulum.datetime(2023, 1, 1, tz="UTC"),
     catchup=False,
-    dag_id='churn',
-    tags=["churn"],
-    on_success_callback=send_telegram_success_message,
-    on_failure_callback=send_telegram_failure_message
-    )
-
-
+    tags=["ETL"]
+)
 def prepare_churn_dataset():
     import pandas as pd
     import numpy as np
-    from airflow.providers.postgres.hooks.postgres import PostgresHook    
+    from airflow.providers.postgres.hooks.postgres import PostgresHook
+ 
     @task()
-    def create_table():
-        from sqlalchemy import MetaData, Table, Column, String, Integer, Float, inspect, Table, MetaData, Column, DateTime, UniqueConstraint
+    def create_table() -> None:
+        import sqlalchemy
+        from sqlalchemy import MetaData, Table, Column, String, Integer, inspect, Float, DateTime, UniqueConstraint
+
         hook = PostgresHook('destination_db')
-        conn = hook.get_sqlalchemy_engine()
+        db_conn = hook.get_sqlalchemy_engine()
         metadata = MetaData()
         users_churn = Table('users_churn', metadata,
-                            Column('id', Integer, primary_key=True, autoincrement=True),
-                            Column('customer_id', String), Column('begin_date', DateTime),
-                            Column('end_date', DateTime), Column('type', String),
-                            Column('paperless_billing', String), Column('payment_method', String),
-                            Column('monthly_charges', Float), Column('total_charges', Float),
-                            Column('internet_service', String), Column('online_security', String),
-                            Column('online_backup', String), Column('device_protection', String),
-                            Column('tech_support', String), Column('streaming_tv', String),
-                            Column('streaming_movies', String), Column('gender', String),
-                            Column('senior_citizen', Integer), Column('partner', String),
-                            Column('dependents', String), Column('multiple_lines', String),
-                            Column('target', Integer),
-                            UniqueConstraint('customer_id', name='unique_constraint')
-                           ) 
-        if not inspect(conn).has_table(users_churn.name): 
-            metadata.create_all(conn) 
-	
+            Column('id', Integer, primary_key=True, autoincrement=True),
+            Column('customer_id', String),
+            Column('begin_date', DateTime),
+            Column('end_date', DateTime),
+            Column('type', String),
+            Column('paperless_billing', String),
+            Column('payment_method', String),
+            Column('monthly_charges', Float),
+            Column('total_charges', Float),
+            Column('internet_service', String),
+            Column('online_security', String),
+            Column('online_backup', String),
+            Column('device_protection', String),
+            Column('tech_support', String),
+            Column('streaming_tv', String),
+            Column('streaming_movies', String),
+            Column('gender', String),
+            Column('senior_citizen', Integer),
+            Column('partner', String),
+            Column('dependents', String),
+            Column('multiple_lines', String),
+            Column('target', Integer),
+            UniqueConstraint('customer_id', name='unique_customer_id_constraint')
+        )
+        if not inspect(db_conn).has_table(users_churn.name): 
+            metadata.create_all(db_conn)
+            
     @task()
-    def extract():
+    def extract(**kwargs):
+
         hook = PostgresHook('source_db')
         conn = hook.get_conn()
         sql = f"""
@@ -77,9 +85,10 @@ def prepare_churn_dataset():
             replace_index=['customer_id'],
             rows=data.values.tolist()
     )
-    
+
     create_table()
     data = extract()
     transformed_data = transform(data)
     load(transformed_data)
+    
 prepare_churn_dataset()
